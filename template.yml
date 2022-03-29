@@ -1,0 +1,66 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  ffmpegLayerArn:
+    Type: String
+    Default: 'ENTER YOUR LAYER ARN HERE'
+
+Resources:
+  SourceBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub source-bucket-${AWS::StackName}
+  OutputBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub output-bucket-${AWS::StackName}
+ 
+  EditVideoFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: videoProcessingFunction/
+      Handler: app.lambdaHandler
+      Runtime: nodejs14.x
+      MemorySize: 10240
+      Timeout: 900
+      EphemeralStorage:
+        Size: 10240      
+      Environment:
+        Variables:
+          OutputBucketName: !Ref OutputBucket
+      Layers:
+        - !Ref ffmpegLayerArn
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Sub source-bucket-${AWS::StackName}
+        - S3WritePolicy:
+            BucketName: !Ref OutputBucket
+      Events:
+        CreatedEvent:
+          Type: S3
+          Properties:
+            Bucket: !Ref SourceBucket
+            Events: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: suffix
+                    Value: '.mp4'
+
+  LambdaInvokePermission:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      FunctionName: !GetAtt EditVideoFunction.Arn
+      Action: 'lambda:InvokeFunction'
+      Principal: 's3.amazonaws.com'
+      SourceAccount: !Sub ${AWS::AccountId}
+      SourceArn: !GetAtt SourceBucket.Arn
+
+Outputs: 
+  SourceBucket:
+    Description: Source Bucket name
+    Value: !Ref SourceBucket
+  OutputBucket:
+    Description: Output Bucket name
+    Value: !Ref OutputBucket
